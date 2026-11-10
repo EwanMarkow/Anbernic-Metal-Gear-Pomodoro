@@ -1,6 +1,6 @@
 -- app/timerview.lua — WORK / BREAK screen:
---   outer ring  = 60-minute dial, lit segments = minutes left
---   inner ring  = 60 ticks, lit ticks = seconds left in the current minute
+--   inner ring  = 60-minute dial, lit segments = minutes left
+--   outer ring  = 60 ticks, lit ticks = seconds left in the current minute
 --   round LCD   = phase, icon and seven-segment digits
 local ui    = require("kit.ui")
 local loop  = require("kit.loop")
@@ -10,10 +10,10 @@ local seg7  = require("app.seg7")
 local View = { lastKey = -1, tabs = true }
 local c = theme.c
 
-local CX, CY = 236, 220
+local CX, CY = theme.DIAL_CX, theme.DIAL_CY
 local LCD_R = 110               -- round LCD radius
-local S1, S2 = 117, 127         -- seconds ring
-local R1, R2 = 136, 156         -- minutes ring
+local R1, R2 = 118, 138         -- minutes ring (next to the LCD)
+local S1, S2 = 145, 155         -- seconds ring (outside it)
 local RDOT, RLABEL = 167, 190   -- minute dots, numbers
 local DIGITS_H = 54
 
@@ -164,10 +164,9 @@ end
 
 function View.draw(App)
   local t = App.timer
-  theme.pageDots(App.stage())
   drawDial(App, t)
   drawLcd(App, t)
-  theme.tabs("timer", 488, 150)
+  theme.tabs("timer")
 
   local key = ((t.phase == "focus") and "focus_" or "break_") .. ((t.state == "paused") and "paused" or "running")
   ui.hintBar(HINTS[key])

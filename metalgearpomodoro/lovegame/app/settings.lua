@@ -30,13 +30,13 @@ local rows = {
     label = "SOUND",
     value = function(s) return onOff(s.sound) end,
     change = function(s) s.sound = not s.sound end,
-    help = function() return "Alarms when work, a round or a set ends." end,
+    help = function() return "Session, break, round and game-over sounds." end,
   },
   {
     label = "MENU SOUNDS",
     value = function(s) return onOff(s.menuSounds) end,
     change = function(s) s.menuSounds = not s.menuSounds end,
-    help = function() return "Click when moving through menus and lists." end,
+    help = function() return "Click on every other button press." end,
   },
   {
     label = "LID CLOSED",
@@ -95,7 +95,6 @@ end
 function Settings.draw(App)
   local s = App.settings
   theme.header()
-  theme.pageDots(App.stage())
   theme.chamfer(PX, PY, PW, PH, 18)
   ui.print("SETTINGS", PX, ui.capY(22, PY + 22), 22, c.text, "center", PW)
   theme.hline(PX + 20, PX + PW - 20, PY + 42)

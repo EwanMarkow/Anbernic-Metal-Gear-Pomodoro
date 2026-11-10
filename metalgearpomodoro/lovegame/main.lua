@@ -29,8 +29,8 @@ local DEFAULTS = {
   confirmOnB = false,      -- B confirms, A goes back
   buttonsChecked = false,  -- the one-time "press A" check has run
   positional = false,      -- gamepad reports Xbox positions (A/B and X/Y swapped)
-  sound = true,            -- alarms: end of work, round, set
-  menuSounds = true,       -- click when moving through menus and lists
+  sound = true,            -- session, break, round, set and game-over sounds
+  menuSounds = true,       -- click on every other button press
   lidMode = "keep",        -- "keep" | "pause"
   scanlines = true,
   setDate = "",            -- today's set of 4 cycles
@@ -54,6 +54,9 @@ local App = {
   completePending = false, -- the SESSION COMPLETE screen is waiting
   historyRange = nil,
   splashLearn = false,     -- the title screen's A press also learns the button layout
+  soundPlayed = false,     -- the current button press already made a sound
+  quitStart = nil,         -- GAME OVER sequence: when it started
+  quitAt = nil,            -- ... and when the app closes
   session = { focusStart = 0, focusMin = 0, focusOk = false, breakStart = 0, breakMin = 0, breakOk = false },
   toast = ui.toast,
 }
@@ -96,10 +99,13 @@ function App.toggleSound()
   App.save()
 end
 
+-- Event sounds (SOUND setting). Marks the press as handled, so it gets no extra click.
 function App.playChime(which)
+  App.soundPlayed = true
   if App.settings.sound then chime.play(which) end
 end
 
+-- The default click (MENU SOUNDS setting).
 function App.navSound()
   if App.settings.menuSounds then chime.play("nav") end
 end
@@ -127,10 +133,6 @@ function App.openMenu(menu)
   loop.invalidate()
 end
 
-function App.quit()
-  love.event.quit()  -- love.quit() below saves
-end
-
 function App.timerActive()
   local state = App.timer.state
   return state == "running" or state == "paused"
@@ -141,13 +143,6 @@ function App.timerScreen()
   if App.timerActive() then return "timer" end
   if App.completePending then return "complete" end
   return "setup"
-end
-
--- Top-right squares: 1 = work, 2 = break, 3 = cycle complete.
-function App.stage()
-  if App.completePending then return 3 end
-  if App.timerActive() and App.timer.phase == "break" then return 2 end
-  return 1
 end
 
 -- "POMODORO n/4"
@@ -178,6 +173,7 @@ function App.startFocus()
   ses.focusStart, ses.focusMin, ses.focusOk = os.time(), minutes, false
   ses.breakMin, ses.breakOk = App.minutes("break"), false
   App.save()
+  App.playChime("sessionStart")
   log.info(("work %d min, cycle %d/%d"):format(minutes, s.setDone + 1, App.CYCLES))
   App.switch("timer")
 end
@@ -214,7 +210,7 @@ end
 local function focusFinished(whileAsleep)
   endFocus(true)
   App.save()
-  App.playChime("focusDone")
+  App.playChime("restStart")
   App.menu = nil
   log.info("work finished" .. (whileAsleep and " (lid was closed)" or ""))
   startBreak()
@@ -236,38 +232,47 @@ function App.finishBreak(ok, whileAsleep)
   if whileAsleep then ui.toast("BREAK ENDED WHILE THE LID WAS CLOSED", 3) end
 end
 
-function App.skipFocus()
-  endFocus(false)
-  App.save()
-  startBreak()
-end
-
-function App.stopSession()
+-- Record the running session as unfinished and stop the clock.
+local function abortSession()
   local t = App.timer
   if t.phase == "focus" then endFocus(false) else endBreak(false) end
   t:stop()
   App.completePending = false
   App.save()
-  log.info("session stopped")
+  log.info("session aborted")
+end
+
+function App.stopSession()
+  abortSession()
+  App.playChime("gameOver")
   App.switch("setup")
+  ui.toast("SESSION ABORTED", 2.5)
+end
+
+-- Menu QUIT: mid-session it plays GAME OVER first, then closes.
+function App.quit()
+  if not App.timerActive() then
+    love.event.quit()  -- love.quit() below saves
+    return
+  end
+  abortSession()
+  App.playChime("gameOver")
+  local wait = App.settings.sound and math.min(4, chime.duration("gameOver")) or 0
+  App.quitStart = love.timer.getTime()
+  App.quitAt = App.quitStart + math.max(1.2, wait)
+end
+
+-- Start+Select / Esc: close right away, but still record an unfinished session.
+local function quitNow()
+  if App.timerActive() then abortSession() end
+  love.event.quit()
 end
 
 -- Menus -----------------------------------------------------------------------------
 local MENU_HINTS = { { "dpad", "MOVE" }, { "confirm", "SELECT" }, { "back", "CLOSE" } }
 
 local function onMainMenu(id)
-  local t = App.timer
-  if id == "pause" then
-    t:pause()
-  elseif id == "resume" then
-    t:resume()
-  elseif id == "skip" then
-    if t.phase == "focus" then App.skipFocus() else App.finishBreak(false) end
-  elseif id == "stop" then
-    App.stopSession()
-  elseif id == "stats" then
-    App.open("stats")
-  elseif id == "settings" then
+  if id == "settings" then
     App.open("settings")
   elseif id == "quit" then
     App.quit()
@@ -275,18 +280,7 @@ local function onMainMenu(id)
 end
 
 function App.openMainMenu()
-  local t = App.timer
-  local items = {}
-  if App.screenName == "timer" and App.timerActive() then
-    items[#items + 1] = (t.state == "running") and { id = "pause", label = "PAUSE" } or { id = "resume", label = "RESUME" }
-    items[#items + 1] = { id = "skip", label = (t.phase == "focus") and "SKIP TO BREAK" or "SKIP BREAK" }
-    items[#items + 1] = { id = "stop", label = "STOP SESSION" }
-  end
-  if App.screenName ~= "stats" and App.screenName ~= "history" then
-    items[#items + 1] = { id = "stats", label = "STATS" }
-  end
-  items[#items + 1] = { id = "settings", label = "SETTINGS" }
-  items[#items + 1] = { id = "quit", label = "QUIT" }
+  local items = { { id = "settings", label = "SETTINGS" }, { id = "quit", label = "QUIT" } }
   App.openMenu(ui.newMenu({ title = "MENU", items = items, cancel = "close", onChoose = onMainMenu, hints = MENU_HINTS }))
 end
 
@@ -303,21 +297,9 @@ function App.confirmStop()
 end
 
 -- Input -----------------------------------------------------------------------------
--- Buttons that move the focus on each screen (they get the menu navigation sound).
-local NAV_KEYS = {
-  setup    = { up = true, down = true, left = true, right = true },
-  settings = { up = true, down = true, left = true, right = true },
-  stats    = { left = true, right = true, l1 = true, r1 = true },
-  history  = { up = true, down = true, left = true, right = true, l1 = true, r1 = true },
-}
-
-local function onAction(a, isRepeat)
-  if a == "quit" then App.quit() return end
-  loop.invalidate()
-
+local function handle(a, isRepeat)
   if App.menu then
     local menu = App.menu
-    if a == "up" or a == "down" then App.navSound() end
     local id = menu:action(a)
     if id then
       App.menu = nil
@@ -333,9 +315,16 @@ local function onAction(a, isRepeat)
     if a == "x" and App.screenName ~= "stats" and App.screenName ~= "history" then App.open("stats") return end
     if a == "y" then App.switch(App.timerScreen()) return end
   end
-  local navKeys = NAV_KEYS[App.screenName]
-  if navKeys and navKeys[a] then App.navSound() end
   screen.action(App, a, isRepeat)
+end
+
+local function onAction(a, isRepeat)
+  if a == "quit" then quitNow() return end
+  if App.quitAt then return end  -- GAME OVER is playing
+  loop.invalidate()
+  App.soundPlayed = false
+  handle(a, isRepeat)
+  if not App.soundPlayed then App.navSound() end  -- every press without its own sound clicks
 end
 
 -- Lid / sleep -----------------------------------------------------------------------
@@ -359,6 +348,21 @@ local function handleWake(asleep, missed)
     t:shift(missed)              -- the real time that passed counts
     if t:remaining() > 0 then ui.toast("LID WAS CLOSED FOR " .. formatAway(asleep), 3) end
   end
+end
+
+-- GAME OVER overlay while the quit sound plays.
+local function drawGameOver()
+  local p = math.min(1, (love.timer.getTime() - App.quitStart) / 0.6)
+  ui.setColor(ui.color.dark, 0.88 * p)
+  love.graphics.rectangle("fill", 0, 0, ui.W, ui.H)
+  local f = ui.font(64)
+  love.graphics.setFont(f)
+  ui.setColor(theme.c.fill, p)
+  love.graphics.print("GAME OVER", math.floor((ui.W - f:getWidth("GAME OVER")) / 2), ui.capY(64, 220))
+  local g = ui.font(18)
+  love.graphics.setFont(g)
+  ui.setColor(theme.c.dim, p)
+  love.graphics.print("MISSION ABORTED", math.floor((ui.W - g:getWidth("MISSION ABORTED")) / 2), ui.capY(18, 282))
 end
 
 -- LÖVE callbacks --------------------------------------------------------------------
@@ -399,6 +403,12 @@ function love.update(dt)
   dt = math.min(dt, 1 / 20)  -- animations never jump (the countdown uses its own clock)
   input.update(dt)
 
+  if App.quitAt then
+    loop.invalidate()
+    if love.timer.getTime() >= App.quitAt then love.event.quit() end
+    return
+  end
+
   local asleep, missed = suspend.check()
   if asleep then handleWake(asleep, missed) end
 
@@ -407,6 +417,7 @@ function love.update(dt)
   end
   keepawake.set(App.timer.state == "running")  -- screen stays on only while the clock runs
   if status.update() then loop.invalidate() end
+  if statusbar.update(status, not App.screen.noStatus) then loop.invalidate() end
   if ui.updateToasts(dt) then loop.invalidate() end
   if App.screen.update then App.screen.update(App, dt) end
 end
@@ -419,6 +430,7 @@ function love.draw()
   theme.frame()
   if App.menu then App.menu:draw() end
   ui.drawToasts()
+  if App.quitAt then drawGameOver() end
   if App.settings.scanlines then theme.scanlines() end
   scale.finish()
 end

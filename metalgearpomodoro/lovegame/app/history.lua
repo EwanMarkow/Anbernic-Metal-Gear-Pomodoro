@@ -38,7 +38,6 @@ end
 
 function View.draw(App)
   theme.header()
-  theme.pageDots(App.stage())
   theme.chamfer(PX, PY, PW, PH, 16)
 
   ui.print("HISTORY", PX + 18, ui.capY(24, 99), 24, c.text)
@@ -74,7 +73,7 @@ function View.draw(App)
     ui.rect(PX + PW - 10, thumbY, 3, thumbH, c.fill, 1)
   end
 
-  theme.tabs("stats", 488, 96)
+  theme.tabs("stats")
   ui.hintBar(HINTS)
 end
 

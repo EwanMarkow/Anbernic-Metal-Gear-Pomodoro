@@ -8,12 +8,13 @@ Green-LCD codec look, a 60-minute dial with a seconds ring, rounds in sets of 4,
 
 ## Features
 - Work 15 / 30 / 60 min, break 5 / 10 / 20 min. The break starts by itself; rounds come in sets of 4.
-- Dial: lit segments = minutes left, inner ring = seconds left in the current minute.
+- Dial: inner ring = minutes left, outer ring = seconds left in the current minute.
 - Stats: focus time, completed sessions, streak, 7-day / 30-day / all-time chart, session history.
 - Keeps the screen awake while the timer runs (muOS idle timeouts are restored afterwards).
 - Lid close: keep counting real time or pause (setting).
-- Status bar: date, time and battery.
-- Sounds: round finished, set finished, menu navigation, plus a synthesized bell at the end of work.
+- Status bar: date, time and battery; types itself out codec-style every minute.
+- Sounds: session start, break start, round finished, set finished, game over (session abandoned),
+  and a click on every other button press.
 - Fully controller-driven; a one-time A press on the title screen learns the button layout.
 
 ## Controls
@@ -22,11 +23,14 @@ Green-LCD codec look, a 60-minute dial with a seconds ring, rounds in sets of 4,
 | D-pad | Move / change values |
 | A / B | Confirm / back (swappable in Settings) |
 | X / Y | Stats / timer |
-| Start | Menu |
+| Start | Menu (Settings, Quit) |
 | Select | Sound on/off |
-| Start + Select | Quit |
+| Start + Select | Quit at once |
 
 PC keyboard: arrows = D-pad, X = A, Z = B, S = X, A = Y, Enter = Start, Right Shift = Select, Esc = quit.
+
+On the home screen, left/right jumps straight to the work length. Quitting from the menu mid-session
+plays GAME OVER first; the unfinished session is logged either way.
 
 ## Run on a Mac
 Install [LÖVE 11.5](https://github.com/love2d/love/releases/tag/11.5) (not 12), then:
@@ -55,7 +59,7 @@ metalgearpomodoro/lovegame/
                               input, ui, save + json, scale, loop, suspend,
                               keepawake, status, log
   assets/fonts/               Tektur (SIL Open Font License, see Tektur-OFL.txt)
-  assets/sounds/              round / set / navigation sounds (OGG)
+  assets/sounds/              session, break, round, set, game-over and click sounds (OGG)
 ```
 
 ## Notes

@@ -1,8 +1,10 @@
 -- app/chime.lua — all app sounds.
---   "focusDone"  work is over, the break starts   (bell synthesized at startup, no file)
---   "round"      a round (work + break) is done    assets/sounds/finishing_round.ogg
---   "streak"     all rounds of the set are done    assets/sounds/finishing_streak.ogg
---   "nav"        moving through menus and lists    assets/sounds/menu_navigation.ogg
+--   "sessionStart"  a work session starts            assets/sounds/session_start.ogg
+--   "restStart"     the break starts                 assets/sounds/rest_start.ogg
+--   "round"         a round (work + break) is done   assets/sounds/finishing_round.ogg
+--   "streak"        all rounds of the set are done   assets/sounds/finishing_streak.ogg
+--   "gameOver"      a session is abandoned           assets/sounds/game_over.ogg
+--   "nav"           any other button press           assets/sounds/menu_navigation.ogg
 -- A missing file falls back to a synthesized bell (or silence for "nav").
 local log = require("kit.log")
 
@@ -12,9 +14,12 @@ local TWO_PI = 2 * math.pi
 
 -- Volumes per sound, to balance the files against each other (0..1).
 local FILES = {
-  round  = { path = "assets/sounds/finishing_round.ogg",  volume = 1.0 },
-  streak = { path = "assets/sounds/finishing_streak.ogg", volume = 0.7 },
-  nav    = { path = "assets/sounds/menu_navigation.ogg",  volume = 0.8 },
+  sessionStart = { path = "assets/sounds/session_start.ogg",    volume = 1.0 },
+  restStart    = { path = "assets/sounds/rest_start.ogg",       volume = 0.8 },
+  round        = { path = "assets/sounds/finishing_round.ogg",  volume = 1.0 },
+  streak       = { path = "assets/sounds/finishing_streak.ogg", volume = 0.7 },
+  gameOver     = { path = "assets/sounds/game_over.ogg",        volume = 0.8 },
+  nav          = { path = "assets/sounds/menu_navigation.ogg",  volume = 0.8 },
 }
 
 local sources = {}
@@ -46,8 +51,7 @@ end
 
 function chime.load()
   local ok, err = pcall(function()
-    sources.focusDone = render({ 659.25, 880.00, 1046.50 }, 0.22, 3.0, 0.28)  -- rising: break time
-    sources.fallback = render({ 1046.50, 880.00, 659.25 }, 0.22, 3.0, 0.28)   -- falling: for missing files
+    sources.fallback = render({ 659.25, 880.00, 1046.50 }, 0.22, 3.0, 0.28)  -- bell for missing files
   end)
   if not ok then log.warn("chime: audio unavailable (" .. tostring(err) .. ")") end
 
@@ -66,13 +70,24 @@ function chime.load()
   end
 end
 
--- which: "focusDone" | "round" | "streak" | "nav"
-function chime.play(which)
+local function find(which)
   local src = sources[which]
   if not src and which ~= "nav" then src = sources.fallback end
+  return src
+end
+
+-- which: "sessionStart" | "restStart" | "round" | "streak" | "gameOver" | "nav"
+function chime.play(which)
+  local src = find(which)
   if not src then return end
   src:stop()
   src:play()
+end
+
+-- Length of a sound in seconds (0 if there is none).
+function chime.duration(which)
+  local src = find(which)
+  return src and src:getDuration("seconds") or 0
 end
 
 return chime

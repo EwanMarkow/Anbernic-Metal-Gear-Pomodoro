@@ -224,7 +224,6 @@ end
 
 function View.draw(App)
   theme.header()
-  theme.pageDots(App.stage())
   theme.chamfer(PX, PY, PW, PH, 16)
 
   theme.icon("bars", PX + 22, 99, 20, c.text)
@@ -239,7 +238,7 @@ function View.draw(App)
   theme.hline(PX + 12, PX + PW - 12, 312)
   drawRecent()
 
-  theme.tabs("stats", 488, 96)
+  theme.tabs("stats")
   ui.hintBar(HINTS)
   theme.cycle(App.cycleNumber(), App.CYCLES)
 end

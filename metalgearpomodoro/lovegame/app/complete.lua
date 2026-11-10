@@ -41,7 +41,6 @@ end
 function View.draw(App)
   local s, ses = App.settings, App.session
   local setDone = s.setDone >= App.CYCLES
-  theme.pageDots(3)
 
   theme.chamfer(PX, PY, PW, PH, 18)
   ui.print(setDone and "SET COMPLETE" or "SESSION COMPLETE", PX, ui.capY(26, PY + 30), 26, c.text, "center", PW)
@@ -61,7 +60,7 @@ function View.draw(App)
                          or string.format("NEXT CYCLE (%d/%d)", s.setDone + 1, App.CYCLES)
   theme.button(label, PX, 338, PW, 50, true)
 
-  theme.tabs("timer", 488, 150)
+  theme.tabs("timer")
   ui.hintBar(HINTS)
 end
 

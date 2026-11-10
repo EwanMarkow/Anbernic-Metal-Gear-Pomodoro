@@ -26,6 +26,7 @@ function Setup.action(App, a)
     Setup.row = Setup.row % 3 + 1
   elseif a == "left" or a == "right" then
     local d = (a == "left") and -1 or 1
+    if Setup.row == 3 then Setup.row = 1 end  -- from START, left/right go straight to WORK
     if Setup.row == 1 then
       s.focusIndex = math.max(1, math.min(#App.FOCUS, s.focusIndex + d))
     elseif Setup.row == 2 then
@@ -52,7 +53,6 @@ end
 function Setup.draw(App)
   local s = App.settings
   theme.header()
-  theme.pageDots(App.stage())
 
   theme.chamfer(PX, PY, PW, PH, 18)
   ui.print("SET SESSION", PX, ui.capY(22, PY + 24), 22, c.text, "center", PW)

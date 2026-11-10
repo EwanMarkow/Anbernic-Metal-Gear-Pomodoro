@@ -54,7 +54,12 @@ function theme.textAt(text, size, x, baseline, color)
   return f:getWidth(text)
 end
 
--- Frame, header, page dots -------------------------------------------------------
+-- Layout shared by several screens ---------------------------------------------
+-- Centre of the timer dial. The TIMER / STATS tabs keep one spot on every screen,
+-- with their divider level with the dial's centre (the "15" label).
+theme.DIAL_CX, theme.DIAL_CY = 236, 220
+
+-- Frame, header -----------------------------------------------------------------
 function theme.frame()
   ui.outline(6, 6, ui.W - 12, ui.H - 12, 14, c.line, 2, 0.8)
 end
@@ -70,25 +75,11 @@ function theme.logo(x, y, h)
   end
 end
 
--- METAL GEAR (small) over POMODORO (big), subtitle on the title's baseline.
+-- METAL GEAR (small) over POMODORO (big).
 function theme.header()
   theme.logo(24, 21, 36)
   ui.print("METAL GEAR", 98, ui.capY(18, 24), 18, c.dim)
-  local base = theme.baseline(48, 30)
-  local w = theme.textAt("POMODORO", 30, 96, base, c.text)
-  theme.textAt("FOCUS TIMER v1.0", 16, 96 + w + 14, base, c.dim)
-end
-
--- Three squares top-right: 1 = work, 2 = break, 3 = cycle complete.
-function theme.pageDots(n)
-  for i = 1, 3 do
-    local x = ui.W - 66 + (i - 1) * 18
-    if i <= n then
-      ui.rect(x, 18, 12, 12, c.fill, 1)
-    else
-      ui.outline(x + 0.5, 18.5, 11, 11, 1, c.line, 1.5)
-    end
-  end
+  theme.textAt("POMODORO", 30, 96, theme.baseline(48, 30), c.text)
 end
 
 -- "POMODORO  2/4" plus cycle squares, bottom-left (draw after ui.hintBar).
@@ -192,11 +183,12 @@ function theme.badge(letter, cx, cy, r, inverted)
   ui.glyphLetter(letter, cx, cy, 16, inverted and c.fill or c.ink)
 end
 
--- Y TIMER / X STATS tabs. active = "timer" | "stats"
+-- Y TIMER / X STATS tabs, right of the dial. active = "timer" | "stats"
 local TABS = { { "y", "TIMER", "timer" }, { "x", "STATS", "stats" } }
+local TABS_X, TABS_W, TABS_ROW = 488, 132, 50
 
-function theme.tabs(active, x, y)
-  local w, rowH = 132, 50
+function theme.tabs(active)
+  local x, y, w, rowH = TABS_X, theme.DIAL_CY - TABS_ROW, TABS_W, TABS_ROW
   ui.rect(x, y, w, rowH * 2, c.panel, 10)
   for i = 1, 2 do
     local tab = TABS[i]
