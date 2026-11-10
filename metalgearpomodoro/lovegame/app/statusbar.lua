@@ -1,4 +1,4 @@
--- app/statusbar.lua — top-right status line: "> TUE 10 NOV  23:16  [battery] 87%".
+-- app/statusbar.lua — top-right status line: "TUE 10 NOV  23:16  [battery] 87%".
 -- Every minute, and whenever the bar appears, the line types itself out like the
 -- title screen's codec lines: 40 characters a second with a block cursor at the end.
 --   statusbar.update(st, visible)  call every frame; true while the animation needs redraws
@@ -48,7 +48,7 @@ local function rebuild(st)
   local function text(s, color, gap)
     line[#line + 1] = { text = s, color = color, w = f:getWidth(s), gap = gap }
   end
-  text("> " .. st.date, c.dim, 12)
+  text(st.date, c.dim, 12)
   text(st.time, c.text, 14)
   if st.percent then
     line[#line + 1] = { battery = true, w = BATTERY_W, gap = 7 }
