@@ -1,0 +1,7 @@
+# written on the device at runtime
+metalgearpomodoro/log.txt
+metalgearpomodoro/conf/
+
+# packaging and OS clutter
+*.zip
+.DS_Store

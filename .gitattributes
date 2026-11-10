@@ -1,0 +1,9 @@
+# The launcher and Lua must keep LF line endings to run on the device
+*.sh  text eol=lf
+*.lua text eol=lf
+*.md  text eol=lf
+*.txt text eol=lf
+
+*.ttf binary
+*.ogg binary
+*.png binary
