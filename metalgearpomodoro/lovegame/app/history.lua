@@ -1,4 +1,5 @@
--- app/history.lua — DETAILS: every logged session in the chosen range, newest first.
+-- app/history.lua — DETAILS: every logged session in the chosen period (a range, a day
+-- or a month picked on the stats screen), newest first.
 local ui    = require("kit.ui")
 local theme = require("app.theme")
 local stats = require("app.stats")
@@ -14,9 +15,9 @@ local list = {}
 local title = ""
 
 function View.enter(App)
-  local range = App.historyRange or { id = "week", label = "7 DAYS" }
-  title = (range.id == "all") and "ALL TIME" or ("LAST " .. range.label)
-  list = stats.entries(range.id)
+  local period = App.historyRange or stats.rangePeriod("week")
+  title = period.title
+  list = stats.entries(period)
   View.index, View.top = 1, 1
 end
 
@@ -46,7 +47,7 @@ function View.draw(App)
   theme.hline(PX + 12, PX + PW - 12, 120)
 
   if #list == 0 then
-    ui.print("No sessions in this range yet.", PX, ui.capY(18, 270), 18, c.dim, "center", PW)
+    ui.print("No sessions in this period.", PX, ui.capY(18, 270), 18, c.dim, "center", PW)
   end
   for r = 0, ROWS - 1 do
     local i = View.top + r

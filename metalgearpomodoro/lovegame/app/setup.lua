@@ -6,8 +6,8 @@ local Setup = { row = 3, tabs = true }  -- row: 1 = work, 2 = break, 3 = start b
 local c = theme.c
 
 local PX, PY, PW, PH = 64, 104, 512, 186
-local CHIP_W, CHIP_H, CHIP_GAP = 106, 42, 14
-local CHIPS_X = PX + PW - 20 - (CHIP_W * 3 + CHIP_GAP * 2)
+local CHIP_W, CHIP_H, CHIP_GAP = 82, 42, 10  -- four chips per row, right-aligned in the panel
+local CHIPS_RIGHT = PX + PW - 20
 local ROW_CY = { 181, 251 }
 local BTN_X, BTN_Y, BTN_W, BTN_H = 128, 320, 384, 50
 
@@ -28,9 +28,9 @@ function Setup.action(App, a)
     local d = (a == "left") and -1 or 1
     if Setup.row == 3 then Setup.row = 1 end  -- from START, left/right go straight to WORK
     if Setup.row == 1 then
-      s.focusIndex = math.max(1, math.min(#App.FOCUS, s.focusIndex + d))
+      s.focusMin = App.step(App.FOCUS, s.focusMin, d)
     elseif Setup.row == 2 then
-      s.breakIndex = math.max(1, math.min(#App.BREAK, s.breakIndex + d))
+      s.breakMin = App.step(App.BREAK, s.breakMin, d)
     end
   elseif a == "confirm" then
     if Setup.row < 3 then Setup.row = Setup.row + 1 else App.startFocus() end
@@ -44,8 +44,9 @@ local function row(index, label, values, selected)
   local focused = (Setup.row == index)
   if focused then theme.triangle(PX + 18, cy, 14, c.fill) end
   ui.print(label, PX + 36, ui.capY(22, cy), 22, focused and c.fill or c.text)
+  local x0 = CHIPS_RIGHT - (#values * CHIP_W + (#values - 1) * CHIP_GAP)
   for i = 1, #values do
-    local x = CHIPS_X + (i - 1) * (CHIP_W + CHIP_GAP)
+    local x = x0 + (i - 1) * (CHIP_W + CHIP_GAP)
     theme.chip(values[i], x, cy - CHIP_H / 2, CHIP_W, CHIP_H, i == selected, focused)
   end
 end
@@ -57,9 +58,9 @@ function Setup.draw(App)
   theme.chamfer(PX, PY, PW, PH, 18)
   ui.print("SET SESSION", PX, ui.capY(22, PY + 24), 22, c.text, "center", PW)
   theme.hline(PX + 20, PX + PW - 20, PY + 46)
-  row(1, "WORK", App.FOCUS, s.focusIndex)
+  row(1, "WORK", App.FOCUS, App.indexOf(App.FOCUS, s.focusMin))
   theme.hline(PX + 20, PX + PW - 20, 216)
-  row(2, "BREAK", App.BREAK, s.breakIndex)
+  row(2, "BREAK", App.BREAK, App.indexOf(App.BREAK, s.breakMin))
 
   theme.button("START SESSION", BTN_X, BTN_Y, BTN_W, BTN_H, Setup.row == 3)
 

@@ -1,11 +1,21 @@
 -- app/statsview.lua — STATS: range tabs, three cards, focus-time chart, completion ring,
--- recent sessions. D-pad left/right (or L1/R1) changes the range, A opens the full history.
+-- recent sessions.
+--   D-pad left/right  change the range (7 days / 30 days / all time)
+--   L1/R1             select a day (or a month in ALL TIME); R1 past the newest bar = whole range
+--   A                 DETAILS: every session in the selection (or the whole range)
+--   B                 clear the selection, then leave
+-- With a day or month selected, the cards, ring and recent sessions show only that period.
 local ui    = require("kit.ui")
 local theme = require("app.theme")
 local seg7  = require("app.seg7")
 local stats = require("app.stats")
 
-local View = { range = 1, tabs = true }
+local View = {
+  range = 1,         -- index into RANGES
+  sel = nil,         -- selected bar, nil = whole range
+  keepSel = false,   -- coming back from DETAILS keeps the selection
+  tabs = true,
+}
 local c = theme.c
 
 local RANGES = {
@@ -13,7 +23,12 @@ local RANGES = {
   { id = "month", label = "30 DAYS" },
   { id = "all",   label = "ALL TIME" },
 }
-local HINTS = { { "dpad", "RANGE" }, { "confirm", "DETAILS" }, { "back", "BACK" } }
+local HINTS = {
+  day        = { { "dpad", "RANGE" }, { "l1/r1", "DAY" },   { "confirm", "DETAILS" }, { "back", "BACK" } },
+  daySel     = { { "dpad", "RANGE" }, { "l1/r1", "DAY" },   { "confirm", "DETAILS" }, { "back", "ALL" } },
+  month      = { { "dpad", "RANGE" }, { "l1/r1", "MONTH" }, { "confirm", "DETAILS" }, { "back", "BACK" } },
+  monthSel   = { { "dpad", "RANGE" }, { "l1/r1", "MONTH" }, { "confirm", "DETAILS" }, { "back", "ALL" } },
+}
 
 local PX, PY, PW, PH = 16, 76, 460, 352
 local CARD_Y, CARD_W, CARD_H = 128, 140, 66
@@ -30,32 +45,54 @@ for i = 0, RN - 1 do
                   RCX + RR2 * c1, RCY + RR2 * s1, RCX + RR1 * c1, RCY + RR1 * s1 }
 end
 
--- data for the current range, rebuilt only when the range changes
-local summary, streak, recent
+-- data for the current range and selection, rebuilt only when they change
+local chart, period, totals, streak, recent
 
 local function refresh()
-  local id = RANGES[View.range].id
-  summary = stats.summary(id)
+  chart = stats.chart(RANGES[View.range].id)
+  if View.sel then View.sel = math.max(1, math.min(#chart.periods, View.sel)) end
+  period = View.sel and chart.periods[View.sel] or stats.rangePeriod(RANGES[View.range].id)
+  totals = stats.totals(period)
   streak = stats.streak()
-  recent = stats.entries(id, 3)
+  recent = stats.entries(period, 3)
 end
 
 function View.enter(App)
+  if not View.keepSel then View.sel = nil end  -- a fresh visit starts on the whole range
+  View.keepSel = false
   refresh()
 end
 
 function View.action(App, a)
-  if a == "left" or a == "l1" then
-    View.range = (View.range - 2) % #RANGES + 1
+  local n = #chart.periods
+  if a == "left" or a == "right" then
+    local d = (a == "left") and -1 or 1
+    View.range = (View.range - 1 + d) % #RANGES + 1
+    View.sel = nil
     refresh()
-  elseif a == "right" or a == "r1" then
-    View.range = View.range % #RANGES + 1
+  elseif a == "l1" then
+    View.sel = View.sel and math.max(1, View.sel - 1) or n
+    refresh()
+  elseif a == "r1" then
+    if not View.sel then
+      View.sel = n
+    elseif View.sel >= n then
+      View.sel = nil  -- past the newest bar: back to the whole range
+    else
+      View.sel = View.sel + 1
+    end
     refresh()
   elseif a == "confirm" then
-    App.historyRange = RANGES[View.range]
+    App.historyRange = period
+    View.keepSel = true
     App.open("history")
   elseif a == "back" then
-    App.back()
+    if View.sel then
+      View.sel = nil
+      refresh()
+    else
+      App.back()
+    end
   end
 end
 
@@ -93,7 +130,7 @@ end
 local function drawCards()
   local maxW = CARD_W - 20
   local cx, base = card(1, "target", "FOCUS TIME")
-  local hours, mins = math.floor(summary.focus / 3600), math.floor(summary.focus % 3600 / 60)
+  local hours, mins = math.floor(totals.focus / 3600), math.floor(totals.focus % 3600 / 60)
   if hours > 0 then
     valueGroup(cx, base, maxW, tostring(hours), "h", string.format("%02d", mins), "m")
   else
@@ -101,9 +138,9 @@ local function drawCards()
   end
 
   cx, base = card(2, "box", "COMPLETED")
-  valueGroup(cx, base, maxW, summary.done .. "/" .. summary.started, "")
+  valueGroup(cx, base, maxW, totals.done .. "/" .. totals.started, "")
 
-  cx, base = card(3, "flame", "STREAK")
+  cx, base = card(3, "flame", "STREAK")  -- days in a row: not tied to the selection
   valueGroup(cx, base, maxW, tostring(streak), (streak == 1) and " day" or " days")
 end
 
@@ -121,10 +158,11 @@ local function hoursLabel(v)
 end
 
 local function drawChart()
-  ui.print(summary.title, PX + 12, ui.capY(16, 210), 16, c.text)
+  local title = View.sel and ("FOCUS TIME · " .. period.title) or chart.title
+  ui.print(title, PX + 12, ui.capY(16, 210), 16, c.text)
 
   local maxSec = 0
-  for i = 1, #summary.bars do maxSec = math.max(maxSec, summary.bars[i]) end
+  for i = 1, #chart.bars do maxSec = math.max(maxSec, chart.bars[i]) end
   local step = niceStep(maxSec / 3600)
   local top = math.max(step, step * math.ceil(maxSec / 3600 / step - 1e-9))
 
@@ -140,36 +178,49 @@ local function drawChart()
     ui.print(label, PLOT_X - 6 - f16:getWidth(label), ui.capY(16, y), 16, c.text)
   end
   ui.print("0", PLOT_X - 6 - f16:getWidth("0"), ui.capY(16, PLOT_Y + PLOT_H), 16, c.text)
+
+  local n = #chart.bars
+  local slot = PLOT_W / n
+
+  -- selected column: a lit band behind the bar and a marker above it
+  if View.sel then
+    local sx = PLOT_X + (View.sel - 1) * slot
+    ui.rect(math.floor(sx + 1), PLOT_Y - 2, math.max(3, math.floor(slot - 1)), PLOT_H + 2, c.panelHi, 2)
+    local mx = math.floor(sx + slot / 2 + 1) + 0.5
+    ui.setColor(c.fill)
+    love.graphics.polygon("fill", mx - 5, 219, mx + 5, 219, mx, 225)
+  end
+
   ui.setColor(c.line)
   love.graphics.line(PLOT_X + 0.5, PLOT_Y - 4, PLOT_X + 0.5, PLOT_Y + PLOT_H + 0.5, PLOT_X + PLOT_W, PLOT_Y + PLOT_H + 0.5)
 
   -- bars
-  local n = #summary.bars
-  local slot = PLOT_W / n
   local bw = math.max(2, math.floor(slot * 0.62))
   local short = false  -- use 2-letter labels for all if any 3-letter one doesn't fit
   for i = 1, n do
-    local label = summary.labels[i]
+    local label = chart.labels[i]
     if label and f16:getWidth(label) > slot - 2 then short = true end
   end
   for i = 1, n do
     local sx = PLOT_X + (i - 1) * slot
-    local h = summary.bars[i] / (top * 3600) * PLOT_H
+    local h = chart.bars[i] / (top * 3600) * PLOT_H
+    local lit = (not View.sel) or (i == View.sel)
     if h > 0 then
-      ui.rect(math.floor(sx + (slot - bw) / 2 + 1), PLOT_Y + PLOT_H - h, bw, h, c.fill, 0, 0.9)
+      ui.rect(math.floor(sx + (slot - bw) / 2 + 1), PLOT_Y + PLOT_H - h, bw, h, c.fill, 0, lit and 0.9 or 0.3)
     end
-    local label = summary.labels[i]
+    local label = chart.labels[i]
     if label then
       if short and #label > 2 then label = label:sub(1, 2) end
-      ui.print(label, math.floor(sx + slot / 2 - f16:getWidth(label) / 2 + 0.5), ui.capY(16, PLOT_Y + PLOT_H + 13), 16, c.text)
+      ui.print(label, math.floor(sx + slot / 2 - f16:getWidth(label) / 2 + 0.5), ui.capY(16, PLOT_Y + PLOT_H + 13),
+               16, lit and c.text or c.dim)
     end
   end
 end
 
 local function drawRing()
   ui.print("COMPLETION", RCX - 80, ui.capY(16, 210), 16, c.text, "center", 160)
-  local started = summary.started
-  local pct = (started > 0) and summary.done / started or 0
+  local started = totals.started
+  local pct = (started > 0) and totals.done / started or 0
   local lit = math.floor(pct * RN + 0.5)
   for i = 1, RN do
     ui.setColor(c.fill, (i <= lit) and 1 or 0.13)
@@ -181,7 +232,7 @@ local function drawRing()
   local x = RCX - w / 2
   x = x + seg7.draw(text, x, RCY + 4, 20, c.text) + 2
   theme.textAt("%", 16, x, RCY + 4, c.text)
-  local sub = summary.done .. "/" .. started
+  local sub = totals.done .. "/" .. started
   if f16:getWidth(sub) <= RR1 * 2 - 8 then
     ui.print(sub, RCX - 40, ui.capY(16, RCY + 18), 16, c.text, "center", 80)
   end
@@ -190,7 +241,10 @@ end
 local function drawRecent()
   ui.print("RECENT SESSIONS", PX + 22, ui.capY(18, 328), 18, c.text)
   if #recent == 0 then
-    ui.print("Finish a work session to see it here.", PX, ui.capY(16, 376), 16, c.dim, "center", PW)
+    local empty = "Finish a work session to see it here."
+    if period.kind == "day" then empty = "No sessions on this day."
+    elseif period.kind == "month" then empty = "No sessions in this month." end
+    ui.print(empty, PX, ui.capY(16, 376), 16, c.dim, "center", PW)
     return
   end
   for i = 1, #recent do
@@ -222,6 +276,11 @@ local function drawRangeTabs()
   end
 end
 
+local function hints()
+  if RANGES[View.range].id == "all" then return View.sel and HINTS.monthSel or HINTS.month end
+  return View.sel and HINTS.daySel or HINTS.day
+end
+
 function View.draw(App)
   theme.header()
   theme.chamfer(PX, PY, PW, PH, 16)
@@ -239,8 +298,7 @@ function View.draw(App)
   drawRecent()
 
   theme.tabs("stats")
-  ui.hintBar(HINTS)
-  theme.cycle(App.cycleNumber(), App.CYCLES)
+  ui.hintBar(hints())
 end
 
 return View

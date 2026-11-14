@@ -1,12 +1,21 @@
 -- app/stats.lua — session history and daily totals, stored in stats.json.
 -- data.days["2026-11-10"] = { f = focus seconds, d = work sessions finished, s = work sessions started }
 -- data.log = { { t = start time, k = "w"|"b", m = planned minutes, e = elapsed seconds, ok = finished }, ... }
+--
+-- A period is what the stats screen shows: a whole range, one day or one month.
+--   { kind = "range" | "day" | "month",
+--     key = "2026-11-10" (day) | "2026-11" (month),
+--     from, to = unix times (either may be nil = open-ended),
+--     title = "LAST 7 DAYS" | "TUE 10 NOV" | "NOV 2026" }
 local save = require("kit.save")
 
-local stats = { FILE = "stats.json", LOG_MAX = 400 }
+local stats = { FILE = "stats.json", LOG_MAX = 2000 }
 
 local MONTHS = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC" }
 local WEEKDAYS = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" }  -- os.date wday: 1 = Sunday
+local RANGE_TITLES = { week = "LAST 7 DAYS", month = "LAST 30 DAYS", all = "ALL TIME" }
+local CHART_TITLES = { week = "FOCUS TIME (LAST 7 DAYS)", month = "FOCUS TIME (LAST 30 DAYS)",
+                       all = "FOCUS TIME (LAST 6 MONTHS)" }
 
 local data = { days = {}, log = {} }
 
@@ -51,46 +60,82 @@ function stats.record(kind, startedAt, plannedMin, elapsed, ok)
   stats.save()
 end
 
--- range: "week" | "month" | "all". Returns totals plus chart bars (seconds) and labels.
-function stats.summary(range)
-  local out = { focus = 0, done = 0, started = 0, bars = {}, labels = {} }
-  local function add(day)
-    if not day then return end
-    out.focus = out.focus + (day.f or 0)
-    out.done = out.done + (day.d or 0)
-    out.started = out.started + (day.s or 0)
+-- Periods -------------------------------------------------------------------------
+
+-- range: "week" | "month" | "all"
+function stats.rangePeriod(range)
+  local from = nil
+  if range == "week" then from = dayTime(6, 0) elseif range == "month" then from = dayTime(29, 0) end
+  return { kind = "range", from = from, title = RANGE_TITLES[range] or "ALL TIME" }
+end
+
+-- The day `offset` days before today.
+local function dayPeriod(offset)
+  local d = os.date("*t", dayTime(offset))
+  return {
+    kind = "day", key = dayKey(dayTime(offset)),
+    from = dayTime(offset, 0), to = dayTime(offset - 1, 0),
+    title = string.format("%s %d %s", WEEKDAYS[d.wday], d.day, MONTHS[d.month]),
+  }
+end
+
+local function monthPeriod(year, month)
+  return {
+    kind = "month", key = string.format("%04d-%02d", year, month),
+    from = os.time({ year = year, month = month, day = 1, hour = 0 }),
+    to = os.time({ year = year, month = month + 1, day = 1, hour = 0 }),  -- month 13 rolls over
+    title = string.format("%s %d", MONTHS[month], year),
+  }
+end
+
+-- Focus time and work sessions (finished / started) in a period.
+function stats.totals(p)
+  local out = { focus = 0, done = 0, started = 0 }
+  local first = (p.kind == "range" and p.from) and dayKey(p.from) or nil
+  for key, day in pairs(data.days) do
+    local inside
+    if p.kind == "day" then
+      inside = (key == p.key)
+    elseif p.kind == "month" then
+      inside = (key:sub(1, 7) == p.key)
+    else
+      inside = (first == nil) or (key >= first)  -- ISO dates compare as strings
+    end
+    if inside then
+      out.focus = out.focus + (day.f or 0)
+      out.done = out.done + (day.d or 0)
+      out.started = out.started + (day.s or 0)
+    end
+  end
+  return out
+end
+
+-- Chart for a range, oldest bar first: 7 or 30 days, or the last 6 months for "all".
+-- Returns { title, bars = { focus seconds }, labels = { text | false }, periods = { period } }
+function stats.chart(range)
+  local out = { title = CHART_TITLES[range] or CHART_TITLES.all, bars = {}, labels = {}, periods = {} }
+  local function add(p, label)
+    local n = #out.periods + 1
+    out.periods[n] = p
+    out.bars[n] = stats.totals(p).focus
+    out.labels[n] = label
   end
 
-  if range == "all" then
-    for _, day in pairs(data.days) do add(day) end
-    local now = os.date("*t")
-    for back = 5, 0, -1 do  -- last six months, one bar each
-      local y, m = now.year, now.month - back
-      if m < 1 then m, y = m + 12, y - 1 end
-      local prefix = string.format("%04d-%02d", y, m)
-      local sum = 0
-      for key, day in pairs(data.days) do
-        if key:sub(1, 7) == prefix then sum = sum + (day.f or 0) end
-      end
-      out.bars[#out.bars + 1] = sum
-      out.labels[#out.labels + 1] = MONTHS[m]
-    end
-    out.title = "FOCUS TIME (LAST 6 MONTHS)"
-  else
+  if range == "week" or range == "month" then
     local n = (range == "week") and 7 or 30
     for offset = n - 1, 0, -1 do
-      local t = dayTime(offset)
-      local day = data.days[dayKey(t)]
-      add(day)
-      out.bars[#out.bars + 1] = day and day.f or 0
-      local d = os.date("*t", t)
-      if n == 7 then
-        out.labels[#out.labels + 1] = WEEKDAYS[d.wday]
-      else
-        out.labels[#out.labels + 1] = (offset % 7 == 0) and tostring(d.day) or false
-      end
+      local d = os.date("*t", dayTime(offset))
+      local label
+      if n == 7 then label = WEEKDAYS[d.wday] else label = (offset % 7 == 0) and tostring(d.day) or false end
+      add(dayPeriod(offset), label)
     end
-    out.title = (n == 7) and "FOCUS TIME (LAST 7 DAYS)" or "FOCUS TIME (LAST 30 DAYS)"
+  else
+    local now = os.date("*t")
+    for back = 5, 0, -1 do
+      local y, m = now.year, now.month - back
+      if m < 1 then m, y = m + 12, y - 1 end
+      add(monthPeriod(y, m), MONTHS[m])
+    end
   end
   return out
 end
@@ -109,17 +154,20 @@ function stats.streak()
   return count
 end
 
--- Log entries newest first, limited to the range and to `max` entries.
-function stats.entries(range, max)
-  local since = nil
-  if range == "week" then since = dayTime(6, 0) elseif range == "month" then since = dayTime(29, 0) end
+-- Log entries in a period, newest first, at most `max` of them.
+-- The log keeps the last LOG_MAX entries, so very old periods can be incomplete.
+function stats.entries(p, max)
+  local from, to = p.from, p.to
   local out = {}
   local log = data.log
   for i = #log, 1, -1 do
     local e = log[i]
-    if since and (e.t or 0) < since then break end
-    out[#out + 1] = e
-    if max and #out >= max then break end
+    local t = e.t or 0
+    if from and t < from then break end
+    if not to or t < to then
+      out[#out + 1] = e
+      if max and #out >= max then break end
+    end
   end
   return out
 end

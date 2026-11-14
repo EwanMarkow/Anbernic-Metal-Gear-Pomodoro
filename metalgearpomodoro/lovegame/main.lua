@@ -1,5 +1,6 @@
 -- main.lua — Metal Gear Pomodoro for the Anbernic RG35XXSP (LÖVE 11.5 via PortMaster)
 -- Flow: SET SESSION -> WORK -> BREAK (starts by itself) -> SESSION COMPLETE -> next round (set of 4)
+-- The set only carries on through NEXT CYCLE: stopping, quitting or leaving SESSION COMPLETE resets it.
 -- PC test:     love lovegame --fast          (--fast: 1 minute = 1 second)
 -- Device test: POMODORO_FAST=1 bash "Metal Gear Pomodoro.sh"
 local log = require("kit.log")
@@ -24,8 +25,8 @@ loop.install({ fps = 30, idleRedraw = 1.0 })
 local SETTINGS_FILE = "settings.json"
 
 local DEFAULTS = {
-  focusIndex = 2,          -- 30 min
-  breakIndex = 2,          -- 10 min
+  focusMin = 30,           -- work length, one of App.FOCUS
+  breakMin = 10,           -- break length, one of App.BREAK
   confirmOnB = false,      -- B confirms, A goes back
   buttonsChecked = false,  -- the one-time "press A" check has run
   positional = false,      -- gamepad reports Xbox positions (A/B and X/Y swapped)
@@ -33,16 +34,16 @@ local DEFAULTS = {
   menuSounds = true,       -- click on every other button press
   lidMode = "keep",        -- "keep" | "pause"
   scanlines = true,
-  setDate = "",            -- today's set of 4 cycles
-  setDone = 0,
-  setFocus = 0,            -- seconds
-  setTotal = 0,            -- seconds (work + break)
 }
 
+-- Before v1.2 the lengths were saved as positions in these lists.
+local OLD_FOCUS, OLD_BREAK = { 15, 30, 60 }, { 5, 10, 20 }
+
 local App = {
-  FOCUS = { 15, 30, 60 },
-  BREAK = { 5, 10, 20 },
+  FOCUS = { 15, 30, 45, 60 },
+  BREAK = { 5, 10, 15, 20 },
   CYCLES = 4,
+  set = { done = 0, focus = 0, total = 0 },  -- this set of 4: rounds done, focus and total seconds
   secondsPerMinute = 60,
   settings = {},
   screens = {},
@@ -70,16 +71,38 @@ App.screens.settings = require("app.settings")
 App.screens.splash   = require("app.splash")
 
 -- Settings ------------------------------------------------------------------------
+-- Position in list of the value closest to `minutes`.
+function App.indexOf(list, minutes)
+  local best, bestDiff = 1, math.huge
+  for i = 1, #list do
+    local diff = math.abs(list[i] - minutes)
+    if diff < bestDiff then best, bestDiff = i, diff end
+  end
+  return best
+end
+
+-- The neighbour of `minutes` in list, d = -1 or +1, stopping at the ends.
+function App.step(list, minutes, d)
+  local i = math.max(1, math.min(#list, App.indexOf(list, minutes) + d))
+  return list[i]
+end
+
 function App.loadSettings()
   local loaded = save.load(SETTINGS_FILE, {})
+  -- old saves stored list positions: turn them into minutes
+  if loaded.focusMin == nil and type(loaded.focusIndex) == "number" then
+    loaded.focusMin = OLD_FOCUS[math.max(1, math.min(3, math.floor(loaded.focusIndex)))]
+  end
+  if loaded.breakMin == nil and type(loaded.breakIndex) == "number" then
+    loaded.breakMin = OLD_BREAK[math.max(1, math.min(3, math.floor(loaded.breakIndex)))]
+  end
   for key, default in pairs(DEFAULTS) do
     local value = loaded[key]
     App.settings[key] = (type(value) == type(default)) and value or default
   end
   local s = App.settings
-  s.focusIndex = math.max(1, math.min(#App.FOCUS, math.floor(s.focusIndex)))
-  s.breakIndex = math.max(1, math.min(#App.BREAK, math.floor(s.breakIndex)))
-  s.setDone = math.max(0, math.min(App.CYCLES, math.floor(s.setDone)))
+  s.focusMin = App.FOCUS[App.indexOf(App.FOCUS, s.focusMin)]  -- snap to an offered length
+  s.breakMin = App.BREAK[App.indexOf(App.BREAK, s.breakMin)]
   if s.lidMode ~= "keep" and s.lidMode ~= "pause" then s.lidMode = "keep" end
 end
 
@@ -89,8 +112,8 @@ end
 
 function App.minutes(phase)
   local s = App.settings
-  if phase == "focus" then return App.FOCUS[s.focusIndex] end
-  return App.BREAK[s.breakIndex]
+  if phase == "focus" then return s.focusMin end
+  return s.breakMin
 end
 
 function App.toggleSound()
@@ -147,10 +170,16 @@ end
 
 -- "POMODORO n/4"
 function App.cycleNumber()
-  local s = App.settings
-  if s.setDate ~= os.date("%Y-%m-%d") then return 1 end
-  if App.completePending then return math.max(1, s.setDone) end
-  return math.min(App.CYCLES, s.setDone + 1)
+  local done = App.set.done
+  if App.completePending then return math.max(1, done) end
+  return math.min(App.CYCLES, done + 1)
+end
+
+-- Start the set over. The set lives only in memory, so quitting the app resets it too.
+function App.resetSet(why)
+  local set = App.set
+  if set.done > 0 or set.focus > 0 then log.info("set reset: " .. why) end
+  set.done, set.focus, set.total = 0, 0, 0
 end
 
 -- Session flow ----------------------------------------------------------------------
@@ -161,11 +190,7 @@ local function elapsedSeconds()
 end
 
 function App.startFocus()
-  local s = App.settings
-  local today = os.date("%Y-%m-%d")
-  if s.setDate ~= today or s.setDone >= App.CYCLES then
-    s.setDate, s.setDone, s.setFocus, s.setTotal = today, 0, 0, 0
-  end
+  if App.set.done >= App.CYCLES then App.resetSet("set finished, starting a new one") end
   App.completePending = false
   local minutes = App.minutes("focus")
   App.timer:start("focus", minutes * App.secondsPerMinute)
@@ -174,7 +199,7 @@ function App.startFocus()
   ses.breakMin, ses.breakOk = App.minutes("break"), false
   App.save()
   App.playChime("sessionStart")
-  log.info(("work %d min, cycle %d/%d"):format(minutes, s.setDone + 1, App.CYCLES))
+  log.info(("work %d min, cycle %d/%d"):format(minutes, App.set.done + 1, App.CYCLES))
   App.switch("timer")
 end
 
@@ -186,25 +211,25 @@ local function startBreak()
 end
 
 local function endFocus(ok)
-  local s, ses = App.settings, App.session
+  local set, ses = App.set, App.session
   local seconds = elapsedSeconds()
   if ok or seconds >= 60 then  -- ignore accidental starts
     stats.record("focus", ses.focusStart, ses.focusMin, seconds, ok)
   end
   ses.focusOk = ok
   if ok then
-    s.setFocus = s.setFocus + seconds
-    s.setTotal = s.setTotal + seconds
+    set.focus = set.focus + seconds
+    set.total = set.total + seconds
   end
 end
 
 local function endBreak(ok)
-  local s, ses = App.settings, App.session
+  local set, ses = App.set, App.session
   local seconds = elapsedSeconds()
   stats.record("break", ses.breakStart, ses.breakMin, seconds, ok)
   ses.breakOk = ok
-  s.setTotal = s.setTotal + seconds
-  if ses.focusOk then s.setDone = math.min(App.CYCLES, s.setDone + 1) end
+  set.total = set.total + seconds
+  if ses.focusOk then set.done = math.min(App.CYCLES, set.done + 1) end
 end
 
 local function focusFinished(whileAsleep)
@@ -224,7 +249,7 @@ function App.finishBreak(ok, whileAsleep)
   App.completePending = true
   App.save()
   if App.session.focusOk then  -- the round counts (even with a skipped break)
-    App.playChime((App.settings.setDone >= App.CYCLES) and "streak" or "round")
+    App.playChime((App.set.done >= App.CYCLES) and "streak" or "round")
   end
   App.menu = nil
   log.info(ok and "break finished" or "break skipped")
@@ -232,14 +257,24 @@ function App.finishBreak(ok, whileAsleep)
   if whileAsleep then ui.toast("BREAK ENDED WHILE THE LID WAS CLOSED", 3) end
 end
 
--- Record the running session as unfinished and stop the clock.
+-- Record the running session as unfinished, stop the clock and end the set.
 local function abortSession()
   local t = App.timer
   if t.phase == "focus" then endFocus(false) else endBreak(false) end
   t:stop()
   App.completePending = false
+  App.resetSet("session aborted")
   App.save()
   log.info("session aborted")
+end
+
+-- B on SESSION COMPLETE: home instead of NEXT CYCLE, which ends the set.
+function App.leaveComplete()
+  local unfinished = App.set.done > 0 and App.set.done < App.CYCLES
+  App.completePending = false
+  App.resetSet("left SESSION COMPLETE")
+  App.switch("setup")
+  if unfinished then ui.toast("SET RESET", 2) end
 end
 
 function App.stopSession()

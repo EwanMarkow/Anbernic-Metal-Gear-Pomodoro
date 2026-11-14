@@ -1,0 +1,8 @@
+[12:45:31] INFO Metal Gear Pomodoro starting | LOVE 11.5.0 | Linux | OpenGL ES OpenGL ES 3.2 v1.r20p0-01rel0.8ec337de4ddab3365a32cff58063a9da
+[12:45:37] INFO controller: muOS-Keys | gamepad mapping: yes | GUID 060000006d750000090700006f730000
+[12:50:19] INFO work 30 min, cycle 1/4
+[12:50:29] INFO session aborted
+[12:52:04] INFO work 30 min, cycle 1/4
+[13:29:32] INFO work finished
+[13:34:32] INFO break finished
+[13:34:42] INFO bye

@@ -7,9 +7,11 @@ Green-LCD codec look, a 60-minute dial with a seconds ring, rounds in sets of 4,
 ![Screens](docs/screens.png)
 
 ## Features
-- Work 15 / 30 / 60 min, break 5 / 10 / 20 min. The break starts by itself; rounds come in sets of 4.
+- Work 15 / 30 / 45 / 60 min, break 5 / 10 / 15 / 20 min. The break starts by itself; rounds come in sets of 4.
+- A set only carries on through NEXT CYCLE: stopping, quitting the app or leaving SESSION COMPLETE starts it over at 1/4.
 - Dial: inner ring = minutes left, outer ring = seconds left in the current minute.
-- Stats: focus time, completed sessions, streak, 7-day / 30-day / all-time chart, session history.
+- Stats: focus time, completed sessions, day streak, 7-day / 30-day / all-time chart, session history.
+  L1/R1 picks one day (or one month in ALL TIME); the cards, ring, recent sessions and DETAILS then show only that period.
 - Keeps the screen awake while the timer runs (muOS idle timeouts are restored afterwards).
 - Lid close: keep counting real time or pause (setting).
 - Status bar: date, time and battery; types itself out codec-style every minute.
@@ -23,6 +25,7 @@ Green-LCD codec look, a 60-minute dial with a seconds ring, rounds in sets of 4,
 | D-pad | Move / change values |
 | A / B | Confirm / back (swappable in Settings) |
 | X / Y | Stats / timer |
+| L1 / R1 | Stats: pick a day or month (B goes back to the whole range) |
 | Start | Menu (Settings, Quit) |
 | Select | Sound on/off |
 | Start + Select | Quit at once |

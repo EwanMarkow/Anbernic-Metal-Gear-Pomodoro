@@ -1,4 +1,5 @@
 -- app/complete.lua — SESSION COMPLETE: what this cycle did, set totals, NEXT CYCLE.
+-- A continues the set; B goes home and resets it.
 local ui    = require("kit.ui")
 local theme = require("app.theme")
 
@@ -6,7 +7,7 @@ local View = { tabs = true }
 local c = theme.c
 
 local PX, PY, PW, PH = 24, 46, 436, 274
-local HINTS = { { "confirm", "CONTINUE" }, { "back", "QUIT" } }
+local HINTS = { { "confirm", "CONTINUE" }, { "back", "HOME" } }
 
 local function minutesText(seconds)
   local m = math.floor(seconds / 60 + 0.5)
@@ -18,8 +19,7 @@ function View.action(App, a)
   if a == "confirm" then
     App.startFocus()
   elseif a == "back" then
-    App.completePending = false
-    App.switch("setup")
+    App.leaveComplete()
   end
 end
 
@@ -39,8 +39,8 @@ local function statRow(label, value, cy)
 end
 
 function View.draw(App)
-  local s, ses = App.settings, App.session
-  local setDone = s.setDone >= App.CYCLES
+  local set, ses = App.set, App.session
+  local setDone = set.done >= App.CYCLES
 
   theme.chamfer(PX, PY, PW, PH, 18)
   ui.print(setDone and "SET COMPLETE" or "SESSION COMPLETE", PX, ui.capY(26, PY + 30), 26, c.text, "center", PW)
@@ -52,12 +52,12 @@ function View.draw(App)
   phaseRow("BREAK", ses.breakMin, ses.breakOk, PY + 132)
 
   theme.hline(PX + 20, PX + PW - 20, PY + 168)
-  statRow("SESSIONS", string.format("%d / %d", math.min(s.setDone, App.CYCLES), App.CYCLES), PY + 192)
-  statRow("FOCUS TIME", minutesText(s.setFocus), PY + 220)
-  statRow("TOTAL TIME", minutesText(s.setTotal), PY + 248)
+  statRow("SESSIONS", string.format("%d / %d", math.min(set.done, App.CYCLES), App.CYCLES), PY + 192)
+  statRow("FOCUS TIME", minutesText(set.focus), PY + 220)
+  statRow("TOTAL TIME", minutesText(set.total), PY + 248)
 
   local label = setDone and string.format("NEW SET (1/%d)", App.CYCLES)
-                         or string.format("NEXT CYCLE (%d/%d)", s.setDone + 1, App.CYCLES)
+                         or string.format("NEXT CYCLE (%d/%d)", set.done + 1, App.CYCLES)
   theme.button(label, PX, 338, PW, 50, true)
 
   theme.tabs("timer")
